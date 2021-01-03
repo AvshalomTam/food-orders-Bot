@@ -7,7 +7,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const Order = require('./DB/models/order');
 
 // tokens and costants
-const token = '1427121784:AAEgBKh9mZ5eXV4c7wMNG61BJYb7MZcN_-A';
+// const token = '';
 const Admin_id = '476494953';
 const bot = new TelegramBot(token, {polling: true});
 

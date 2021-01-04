@@ -2,117 +2,74 @@ require('./DB/mongoose');
 const {createOrder} = require('./DB/createOrder')
 const {generateDate} = require('./utils/getTheDate');
 const {readableOrdr} = require('./utils/readableOrder');
-const {mapManaToNum, mapNumToMana} = require('./utils/mapManaToNum');
+const {mapManaToNum} = require('./utils/mapManaToNum');
+const {getOrders, userOrderedToday} = require('./DB/readFromDB');
 const TelegramBot = require('node-telegram-bot-api');
-const Order = require('./DB/models/order');
 
 // tokens and costants
-// const token = '';
+// const token = 'insert the right token before running the bot';
 const Admin_id = '476494953';
 const bot = new TelegramBot(token, {polling: true});
-
+// Main menue
 bot.onText(/\/start/, (msg) => {
-    
     bot.sendMessage(msg.chat.id, "Hi! what do you want to do?", {
     "reply_markup": {
         "keyboard": [["Make an order!"], ["See the orders"]]
         }
     });
 });
+
 bot.on('message', (msg) => {
+
     // Make an order!
-    var makeOrder = "Make an order!";
-    if (msg.text.toString() === makeOrder) {
+    if (msg.text.toString() === "Make an order!") {
         bot.sendMessage(msg.chat.id, "Please choose order from the the menue:", {
             "reply_markup": {
                 "keyboard": [["Make an order!", "See the orders", "Exit"], ["pizza"], ["toast"], ["fallafel"]]
                 }
         });
     }
-    if ((msg.text.toString().toLowerCase().indexOf("pizza") === 0) ||
-        (msg.text.toString().toLowerCase().indexOf("toast") === 0) ||
-        (msg.text.toString().toLowerCase().indexOf("fallafel") === 0))  {
+
+    // Order pizza/toast/fallafel
+    if (["pizza", "toast", "fallafel"].includes(msg.text.toString()))  {
             const manaNum = mapManaToNum(msg.text.toString());
             const username = `${msg.chat.first_name.toString()} ${msg.chat.last_name.toString()}`;
             const userid = msg.from.id;
-            const dateOrder = generateDate();
-            
-        const orderInfo = {
-            manaNum,
-            username,
-            userid,
-            dateOrder
-        }
-        // check if user already ordered in that day
-        checkIfUserOrdered(orderInfo, bot, msg.chat.id)
+            const dateOrder = generateDate();  
+        userOrderedToday(userid).then(alreadyOrdered => {
+            if (alreadyOrdered) {
+                bot.sendMessage(userid, "<b>Sorry.. one order per day!</b>", {parse_mode : "HTML"});
+            } else {
+                createOrder(manaNum, username, userid, dateOrder);
+                bot.sendMessage(userid, "<b>We saved your order!</b>", {parse_mode : "HTML"});
+            }
+        })
     }
 
     // See the orders
-    var seeOrders = "See the orders";
-    if (msg.text.toString() === seeOrders) {
-        // const madeOrderToday = false;
-        const userid = msg.from.id;
+    if (msg.text.toString() === "See the orders") {
+        const userid = msg.from.id.toString();
         // Check if user is Admin
-        if (userid.toString() === Admin_id) {
-            const od = getOrders(true, userid, msg, bot);
-        } else {
-            const od = getOrders(false, userid, msg, bot);
-        }
+        const isAdmin = userid === Admin_id
+        // activate async function to fetch data from DB
+        getOrders(isAdmin, userid).then(orders => {
+            if (orders.length === 0) {
+                bot.sendMessage(msg.chat.id, "<b>It looks like you have no orders yet..</b>", {parse_mode : "HTML"})
+            } else {
+                orders.forEach((order) => {
+                    const r = readableOrdr(order);
+                    bot.sendMessage(msg.chat.id, r);
+                })
+            }
+        }) 
     }
 
-    var exit = "Exit";
-    if (msg.text.toString() === exit) {
+    // Exit from menue
+    if (msg.text.toString() === "Exit") {
         bot.sendMessage(msg.chat.id, "BYE BYE!", {
             "reply_markup": {
                 "keyboard": [["Make an order!"], ["See the orders"]]
                 }
-        });
-        
+        });  
     }
 });
-
-async function getOrders(isAdmin, userid, msg, bot) {
-    try {
-        var orders = []
-        if (isAdmin) {
-            orders = await Order.find({
-            })
-        } else {
-            orders = await Order.find({
-                user_id : userid
-            })
-        }
-
-        if (orders.length === 0) {
-            bot.sendMessage(msg.chat.id, "<b>It looks like you have no orders yet..</b>", {parse_mode : "HTML"})
-        } else {
-            orders.forEach((order) => {
-                const r = readableOrdr(order);
-                bot.sendMessage(msg.chat.id, r);
-            })
-        }
-
-    } catch (e) {
-        console.log('Problem with getting data: ' + e);
-    }
-}
-
-async function checkIfUserOrdered(orderInfo, bot, msgId) {
-    const today = generateDate()
-    try {
-        const orders = await Order.find({
-            user_id : orderInfo.userid
-        })
-        orders.filter((order) => {return order.date.toString() === today})
-        // no other orders from today
-        if (orders.length === 0) {
-            createOrder(orderInfo.manaNum, orderInfo.username, orderInfo.userid, orderInfo.dateOrder);
-            bot.sendMessage(msgId, "<b>We saved your order!</b>", {parse_mode : "HTML"});
-        } else {
-            bot.sendMessage(msgId, "<b>Sorry.. one order per day!</b>", {parse_mode : "HTML"});
-        }
-
-    } catch (e) {
-        console.log('Problem with getting data from checkIfUserOrdered: ' + e);
-    }
-}
